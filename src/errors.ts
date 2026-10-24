@@ -35,3 +35,39 @@ export class UnknownSeederError extends SeedingError {
     super(message, { code, details });
   }
 }
+
+export class UnknownCollectionError extends SeedingError {
+  public constructor(
+    message: string,
+    { code = 'UNKNOWN_COLLECTION', details }: SeedingErrorOptions = {},
+  ) {
+    super(message, { code, details });
+  }
+}
+
+export class MissingPartitionKeyError extends SeedingError {
+  public constructor(
+    message: string,
+    { code = 'MISSING_PARTITION_KEY', details }: SeedingErrorOptions = {},
+  ) {
+    super(message, { code, details });
+  }
+}
+
+export class FreshForbiddenError extends SeedingError {
+  public constructor(
+    message: string,
+    { code = 'FRESH_ENVIRONMENT_FORBIDDEN', details }: SeedingErrorOptions = {},
+  ) {
+    super(message, { code, details });
+  }
+}
+
+export class FreshConfirmationError extends SeedingError {
+  public constructor(
+    message: string,
+    { code = 'FRESH_CONFIRMATION_MISMATCH', details }: SeedingErrorOptions = {},
+  ) {
+    super(message, { code, details });
+  }
+}

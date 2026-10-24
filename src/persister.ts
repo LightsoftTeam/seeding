@@ -5,7 +5,13 @@ export interface SeedPersister {
   ): Promise<void>;
 }
 
-export class InMemorySeedPersister implements SeedPersister {
+/** A persister that can inspect and clear documents for database tests. */
+export interface InspectableSeedPersister extends SeedPersister {
+  findAll<T = unknown>(collection: string): Promise<T[]>;
+  reset(collections?: string[]): Promise<void>;
+}
+
+export class InMemorySeedPersister implements InspectableSeedPersister {
   private readonly collections = new Map<string, Map<string, unknown>>();
 
   public async upsert<T extends { id: string }>(
@@ -22,6 +28,21 @@ export class InMemorySeedPersister implements SeedPersister {
 
   public documentsIn<T = unknown>(collection: string): T[] {
     return [...(this.collections.get(collection)?.values() ?? [])] as T[];
+  }
+
+  public async findAll<T = unknown>(collection: string): Promise<T[]> {
+    return this.documentsIn<T>(collection);
+  }
+
+  public async reset(collections?: string[]): Promise<void> {
+    if (collections === undefined) {
+      this.collections.clear();
+      return;
+    }
+
+    for (const collection of collections) {
+      this.collections.delete(collection);
+    }
   }
 
   public collectionNames(): string[] {

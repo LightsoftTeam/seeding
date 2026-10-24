@@ -21,6 +21,26 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./peru": {
+      "import": {
+        "types": "./dist/peru/index.d.ts",
+        "default": "./dist/peru/index.js"
+      },
+      "require": {
+        "types": "./dist/peru/index.d.cts",
+        "default": "./dist/peru/index.cjs"
+      }
+    },
+    "./cosmos": {
+      "import": {
+        "types": "./dist/cosmos/index.d.ts",
+        "default": "./dist/cosmos/index.js"
+      },
+      "require": {
+        "types": "./dist/cosmos/index.d.cts",
+        "default": "./dist/cosmos/index.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "engines": {
@@ -35,9 +55,16 @@
     "test:cov": "vitest run --coverage"
   },
   "peerDependencies": {
+    "@azure/cosmos": "^4.10.1",
     "@faker-js/faker": "^10.0.0"
   },
+  "peerDependenciesMeta": {
+    "@azure/cosmos": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@azure/cosmos": "^4.10.1",
     "@eslint/js": "^10.0.1",
     "@faker-js/faker": "^10.6.0",
     "@types/node": "^22.0.0",
