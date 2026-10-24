@@ -16,5 +16,7 @@ export interface SeederContext<TEnvironment extends string = string> {
 export interface Seeder<TEnvironment extends string = string> {
   readonly name: string;
   readonly allowedEnvironments: readonly TEnvironment[];
+  /** Seeders this one calls; validated before any seeder runs. */
+  readonly calls?: readonly Seeder<TEnvironment>[];
   run(context: SeederContext<TEnvironment>): Promise<void>;
 }

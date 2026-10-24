@@ -23,13 +23,20 @@ export interface RunSeedersOptions<TEnvironment extends string = string> {
   fakerLocale?: LocaleDefinition[];
 }
 
+interface SharedRunState<TEnvironment extends string> {
+  readonly faker: SeederContext<TEnvironment>['faker'];
+  readonly environment: TEnvironment;
+  readonly persist: SeedPersister;
+  readonly log: SeedLogger;
+}
+
 export async function runSeeders<TEnvironment extends string = string>(
   options: RunSeedersOptions<TEnvironment>,
 ): Promise<void> {
   const target = selectSeeder(options);
-  const context = createContext(options);
 
-  await context.call(target);
+  assertReachableAllowed(target, options.environment);
+  await createContext(createSharedState(options), []).call(target);
 }
 
 function selectSeeder<TEnvironment extends string>({
@@ -54,52 +61,76 @@ function selectSeeder<TEnvironment extends string>({
   return found;
 }
 
-function createContext<TEnvironment extends string>(
+function createSharedState<TEnvironment extends string>(
   options: RunSeedersOptions<TEnvironment>,
-): SeederContext<TEnvironment> {
-  const activeStack: string[] = [];
-  const context: SeederContext<TEnvironment> = {
+): SharedRunState<TEnvironment> {
+  return {
     faker: createSeededFaker(options.seed, { locale: options.fakerLocale }),
     environment: options.environment,
     persist: options.persister,
     log: options.logger ?? NO_OP_LOGGER,
+  };
+}
+
+function createContext<TEnvironment extends string>(
+  shared: SharedRunState<TEnvironment>,
+  ancestry: readonly Seeder<TEnvironment>[],
+): SeederContext<TEnvironment> {
+  return {
+    ...shared,
     call: async (...seeders) => {
       for (const seeder of seeders) {
-        await execute(seeder, context, activeStack);
+        await execute(seeder, shared, ancestry);
       }
     },
   };
-
-  return context;
 }
 
 async function execute<TEnvironment extends string>(
   seeder: Seeder<TEnvironment>,
-  context: SeederContext<TEnvironment>,
-  activeStack: string[],
+  shared: SharedRunState<TEnvironment>,
+  ancestry: readonly Seeder<TEnvironment>[],
 ): Promise<void> {
-  assertAllowed(seeder, context.environment);
-  assertNoCycle(seeder, activeStack);
+  assertAllowed(seeder, shared.environment);
+  assertNoCycle(seeder, ancestry);
   const startedAt = Date.now();
 
-  context.log(`Seeding ${seeder.name}`);
-  activeStack.push(seeder.name);
-  try {
-    await seeder.run(context);
-  } finally {
-    activeStack.pop();
-  }
-  context.log(`Seeded ${seeder.name}`, {
+  shared.log(`Seeding ${seeder.name}`);
+  await seeder.run(createContext(shared, [...ancestry, seeder]));
+  shared.log(`Seeded ${seeder.name}`, {
     durationMs: Date.now() - startedAt,
   });
 }
 
-function assertNoCycle(seeder: Seeder<string>, activeStack: string[]): void {
-  if (!activeStack.includes(seeder.name)) {
+function assertReachableAllowed<TEnvironment extends string>(
+  seeder: Seeder<TEnvironment>,
+  environment: TEnvironment,
+  ancestry: readonly Seeder<TEnvironment>[] = [],
+  verified: Set<Seeder<TEnvironment>> = new Set(),
+): void {
+  if (verified.has(seeder)) {
     return;
   }
 
-  const path = [...activeStack, seeder.name];
+  assertAllowed(seeder, environment);
+  assertNoCycle(seeder, ancestry);
+  const branch = [...ancestry, seeder];
+
+  for (const callee of seeder.calls ?? []) {
+    assertReachableAllowed(callee, environment, branch, verified);
+  }
+  verified.add(seeder);
+}
+
+function assertNoCycle<TEnvironment extends string>(
+  seeder: Seeder<TEnvironment>,
+  ancestry: readonly Seeder<TEnvironment>[],
+): void {
+  if (!ancestry.includes(seeder)) {
+    return;
+  }
+
+  const path = [...ancestry, seeder].map((member) => member.name);
   throw new SeedingError(
     `Seeder cycle detected: ${path.join(CYCLE_PATH_SEPARATOR)}`,
     { code: SEEDER_CYCLE_CODE, details: { path } },

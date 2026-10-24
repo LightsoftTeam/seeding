@@ -71,3 +71,21 @@ export class FreshConfirmationError extends SeedingError {
     super(message, { code, details });
   }
 }
+
+export class MissingPersisterError extends SeedingError {
+  public constructor(
+    message: string,
+    { code = 'MISSING_PERSISTER', details }: SeedingErrorOptions = {},
+  ) {
+    super(message, { code, details });
+  }
+}
+
+export class UnknownFactoryStateError extends SeedingError {
+  public constructor(
+    message: string,
+    { code = 'UNKNOWN_FACTORY_STATE', details }: SeedingErrorOptions = {},
+  ) {
+    super(message, { code, details });
+  }
+}
