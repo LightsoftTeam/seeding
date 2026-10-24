@@ -324,6 +324,8 @@ npm version <patch|minor|major> && git push --follow-tags
 
 Pushing the resulting `v*` tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml). The workflow checks that the tag matches `package.json`, runs the publish-time type checks, lint, tests, build, and export checks, then publishes publicly through npm Trusted Publishing (OIDC) with provenance. Configure npm's trusted publisher for `LightsoftTeam/seeding`, workflow `release.yml`, and GitHub environment `npm`; no npm token secret is used.
 
+If the tag push does not start the workflow, run it manually from the tag: `gh workflow run release.yml --ref v<version>`.
+
 ## License
 
 [MIT](LICENSE).
