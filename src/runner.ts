@@ -30,6 +30,11 @@ interface SharedRunState<TEnvironment extends string> {
   readonly log: SeedLogger;
 }
 
+interface PreflightState<TEnvironment extends string> {
+  readonly environment: TEnvironment;
+  readonly verified: Map<Seeder<TEnvironment>, ReadonlySet<string>>;
+}
+
 export async function runSeeders<TEnvironment extends string = string>(
   options: RunSeedersOptions<TEnvironment>,
 ): Promise<void> {
@@ -105,15 +110,44 @@ async function execute<TEnvironment extends string>(
 function assertReachableAllowed<TEnvironment extends string>(
   seeder: Seeder<TEnvironment>,
   environment: TEnvironment,
-  ancestry: readonly Seeder<TEnvironment>[] = [],
 ): void {
+  verifyReachable(seeder, [], { environment, verified: new Map() });
+}
+
+function verifyReachable<TEnvironment extends string>(
+  seeder: Seeder<TEnvironment>,
+  ancestry: readonly Seeder<TEnvironment>[],
+  state: PreflightState<TEnvironment>,
+): ReadonlySet<string> {
   assertNoCycle(seeder, ancestry);
-  assertAllowed(seeder, environment);
+  const verifiedNames = state.verified.get(seeder);
+  const conflictsWithBranch = ancestry.some((ancestor) =>
+    verifiedNames?.has(ancestor.name),
+  );
+  if (verifiedNames !== undefined && !conflictsWithBranch) {
+    return verifiedNames;
+  }
+
+  assertAllowed(seeder, state.environment);
+  return verifyCallees(seeder, ancestry, state);
+}
+
+function verifyCallees<TEnvironment extends string>(
+  seeder: Seeder<TEnvironment>,
+  ancestry: readonly Seeder<TEnvironment>[],
+  state: PreflightState<TEnvironment>,
+): ReadonlySet<string> {
   const branch = [...ancestry, seeder];
+  const reachableNames = new Set([seeder.name]);
 
   for (const callee of seeder.calls ?? []) {
-    assertReachableAllowed(callee, environment, branch);
+    for (const name of verifyReachable(callee, branch, state)) {
+      reachableNames.add(name);
+    }
   }
+
+  state.verified.set(seeder, reachableNames);
+  return reachableNames;
 }
 
 function assertNoCycle<TEnvironment extends string>(

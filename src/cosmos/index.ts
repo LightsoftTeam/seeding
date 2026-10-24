@@ -1,5 +1,9 @@
 import type { Container, Database, PartitionKey } from '@azure/cosmos';
-import { MissingPartitionKeyError, UnknownCollectionError } from '../errors.js';
+import {
+  ConflictingCollectionConfigError,
+  MissingPartitionKeyError,
+  UnknownCollectionError,
+} from '../errors.js';
 import type { InspectableSeedPersister } from '../persister.js';
 
 const ALL_DOCUMENTS_QUERY = 'SELECT * FROM c';
@@ -10,6 +14,12 @@ const MAX_OFFENDING_DOCUMENT_IDS = 5;
 interface DocumentPartition {
   id: string;
   partitionKey: PartitionKey;
+}
+
+interface ResetTarget {
+  containerId: string;
+  container: Container;
+  partitionKeyPath: string;
 }
 
 export interface CosmosCollection {
@@ -57,7 +67,7 @@ class CosmosSeedPersister implements InspectableSeedPersister {
 
   public async reset(collections?: string[]): Promise<void> {
     const names = collections ?? Object.keys(this.options.collections);
-    const targets = names.map((name) => this.resolveCollection(name));
+    const targets = this.resolveResetTargets(names);
     const prepared = [];
 
     for (const { container, partitionKeyPath } of targets) {
@@ -70,6 +80,24 @@ class CosmosSeedPersister implements InspectableSeedPersister {
     for (const { container, documents } of prepared) {
       await clearContainer(container, documents);
     }
+  }
+
+  private resolveResetTargets(names: string[]): ResetTarget[] {
+    const targets = new Map<string, ResetTarget>();
+
+    for (const name of names) {
+      const target = this.resolveCollection(name);
+      const existing = targets.get(target.containerId);
+      if (existing && existing.partitionKeyPath !== target.partitionKeyPath) {
+        throw new ConflictingCollectionConfigError(
+          `Conflicting partition key paths for container "${target.containerId}"`,
+          { details: { containerId: target.containerId } },
+        );
+      }
+      targets.set(target.containerId, target);
+    }
+
+    return [...targets.values()];
   }
 
   private resolveCollection(collection: string) {
@@ -85,6 +113,7 @@ class CosmosSeedPersister implements InspectableSeedPersister {
     }
 
     return {
+      containerId: configured.container,
       container: this.options.database.container(configured.container),
       partitionKeyPath: configured.partitionKeyPath,
     };

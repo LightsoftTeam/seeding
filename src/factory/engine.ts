@@ -260,7 +260,7 @@ async function produceChildBatch(
   const forced = { [link.foreignKey]: parent[link.ownerKey] };
   const children = await produceBatch(
     link.blueprint,
-    { ...run, parentChain: [] },
+    run,
     link.blueprint.count,
     {},
     forced,

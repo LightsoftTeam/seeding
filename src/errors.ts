@@ -54,6 +54,15 @@ export class MissingPartitionKeyError extends SeedingError {
   }
 }
 
+export class ConflictingCollectionConfigError extends SeedingError {
+  public constructor(
+    message: string,
+    { code = 'CONFLICTING_COLLECTION_CONFIG', details }: SeedingErrorOptions = {},
+  ) {
+    super(message, { code, details });
+  }
+}
+
 export class FreshForbiddenError extends SeedingError {
   public constructor(
     message: string,

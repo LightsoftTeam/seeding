@@ -9,6 +9,9 @@ type TestEnvironment = 'local' | 'production';
 const LOCAL_ONLY: readonly TestEnvironment[] = ['local'];
 const EVERYWHERE: readonly TestEnvironment[] = ['local', 'production'];
 const USERS_COLLECTION = 'users';
+const DIAMOND_DEPTH = 20;
+const MAX_ALLOWED_ENVIRONMENT_READS = 2;
+const DIAMOND_TIMEOUT_MS = 1_000;
 
 function seeder(
   name: string,
@@ -128,6 +131,41 @@ describe('static preflight of declared calls', () => {
 
     await expect(runSeeders(options(root))).resolves.toBeUndefined();
   });
+
+  it('checks each seeder once in a depth-20 diamond graph', async () => {
+    const reads = new Map<string, number>();
+    function trackedSeeder(
+      name: string,
+      calls: readonly Seeder<TestEnvironment>[] = [],
+    ): Seeder<TestEnvironment> {
+      reads.set(name, 0);
+      return {
+        name,
+        calls,
+        get allowedEnvironments() {
+          reads.set(name, (reads.get(name) ?? 0) + 1);
+          return EVERYWHERE;
+        },
+        run: async () => undefined,
+      };
+    }
+
+    let root = trackedSeeder('Leaf');
+    for (let level = 0; level < DIAMOND_DEPTH; level++) {
+      const left = trackedSeeder(`Left${level}`, [root]);
+      const right = trackedSeeder(`Right${level}`, [root]);
+      root = trackedSeeder(`Root${level}`, [left, right]);
+    }
+
+    await expect(runSeeders(options(root))).resolves.toBeUndefined();
+
+    expect(reads.size).toBe(DIAMOND_DEPTH * 3 + 1);
+    for (const [name, count] of reads) {
+      expect(count, name).toBe(
+        name === root.name ? MAX_ALLOWED_ENVIRONMENT_READS : 1,
+      );
+    }
+  }, DIAMOND_TIMEOUT_MS);
 
   it('detects cycles in declared calls before running', async () => {
     let executed = false;

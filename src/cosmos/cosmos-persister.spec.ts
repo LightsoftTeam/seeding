@@ -1,6 +1,7 @@
 import type { Database } from '@azure/cosmos';
 import { describe, expect, it } from 'vitest';
 import {
+  ConflictingCollectionConfigError,
   MissingPartitionKeyError,
   SeedingError,
   UnknownCollectionError,
@@ -241,6 +242,59 @@ describe('createCosmosSeedPersister', () => {
 });
 
 describe('Cosmos persister reset', () => {
+  it('queries and clears duplicate selected collections once', async () => {
+    const { database, persister } = setup();
+    await persister.upsert('users', [{ id: 'u1', tenant: { key: 'team-a' } }]);
+
+    await persister.reset(['users', 'users']);
+
+    const container = database.container('people-store');
+    expect(container.queries).toEqual(['SELECT * FROM c']);
+    expect(container.deletions).toEqual([{ id: 'u1', partitionKey: 'team-a' }]);
+    expect(container.documents.size).toBe(0);
+  });
+
+  it('queries and clears a container shared by collections once', async () => {
+    const database = new FakeDatabase();
+    const shared = { container: 'people-store', partitionKeyPath: '/tenant/key' };
+    const persister = createCosmosSeedPersister({
+      database: database as unknown as Database,
+      collections: { users: shared, admins: { ...shared } },
+    });
+    await persister.upsert('users', [{ id: 'u1', tenant: { key: 'team-a' } }]);
+
+    await persister.reset();
+
+    const container = database.container('people-store');
+    expect(container.queries).toEqual(['SELECT * FROM c']);
+    expect(container.deletions).toEqual([{ id: 'u1', partitionKey: 'team-a' }]);
+    expect(container.documents.size).toBe(0);
+  });
+
+  it('rejects conflicting shared-container partition paths before querying', async () => {
+    const database = new FakeDatabase();
+    const persister = createCosmosSeedPersister({
+      database: database as unknown as Database,
+      collections: {
+        users: { container: 'people-store', partitionKeyPath: '/tenant/key' },
+        admins: { container: 'people-store', partitionKeyPath: '/id' },
+      },
+    });
+    await persister.upsert('users', [{ id: 'u1', tenant: { key: 'team-a' } }]);
+
+    const result = persister.reset();
+
+    await expect(result).rejects.toBeInstanceOf(ConflictingCollectionConfigError);
+    await expect(result).rejects.toBeInstanceOf(SeedingError);
+    await expect(result).rejects.toMatchObject({
+      code: 'CONFLICTING_COLLECTION_CONFIG',
+    });
+    const container = database.container('people-store');
+    expect(container.queries).toEqual([]);
+    expect(container.deletions).toEqual([]);
+    expect(container.documents.size).toBe(1);
+  });
+
   it('deletes items from every mapped container while retaining containers', async () => {
     const { database, persister } = setup();
     await persister.upsert('users', [{ id: 'u1', tenant: { key: 'team-a' } }]);

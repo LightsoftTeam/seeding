@@ -2,6 +2,48 @@ import { describe, expect, it } from 'vitest';
 import { matchesPartial } from './index.js';
 
 describe('matchesPartial', () => {
+  it.each([
+    [new Date('2026-01-01'), new Date('2026-01-01'), true],
+    [new Date('2026-01-01'), new Date('2026-01-02'), false],
+    [new Date('2026-01-01'), {}, false],
+    [{}, new Date('2026-01-01'), false],
+  ])('compares dates %j and %j: %s', (document, expected, match) => {
+    expect(matchesPartial({ value: document }, { value: expected })).toBe(match);
+  });
+
+  it.each([
+    [new Map([['id', 1]]), new Map([['id', 1]]), true],
+    [new Map([['id', 1]]), new Map([['id', 2]]), false],
+    [new Map([['id', 1]]), new Map(), false],
+    [new Map(), {}, false],
+    [new Set([1, 2]), new Set([2, 1]), true],
+    [new Set([1, 2]), new Set([1]), false],
+    [new Set(), {}, false],
+  ])('compares collections structurally: %s and %s', (document, expected, match) => {
+    expect(matchesPartial({ value: document }, { value: expected })).toBe(match);
+  });
+
+  it('compares class instances exactly, including their prototype', () => {
+    class Profile {
+      public constructor(public readonly name: string) {}
+    }
+
+    expect(matchesPartial(new Profile('Ada'), new Profile('Ada'))).toBe(true);
+    expect(matchesPartial(new Profile('Ada'), new Profile('Grace'))).toBe(false);
+    expect(matchesPartial(new Profile('Ada'), { name: 'Ada' })).toBe(false);
+    expect(matchesPartial(new Profile('Ada'), {})).toBe(false);
+  });
+
+  it('partially matches objects with null prototypes', () => {
+    const document: unknown = Object.assign(Object.create(null), {
+      name: 'Ada',
+      active: true,
+    });
+    const expected: unknown = Object.assign(Object.create(null), { name: 'Ada' });
+
+    expect(matchesPartial(document, expected)).toBe(true);
+  });
+
   it('matches nested objects without requiring every document field', () => {
     expect(
       matchesPartial(

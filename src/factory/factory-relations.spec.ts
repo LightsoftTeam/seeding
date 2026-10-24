@@ -17,6 +17,10 @@ interface CyclicEntity {
   parentId: string;
 }
 
+interface ChildWithSecondaryParent extends CyclicEntity {
+  secondaryParentId: string;
+}
+
 describe('parent resolution cycles', () => {
   it.each(['make', 'create'] as const)(
     'rejects a self-referential belongsTo during %s',
@@ -154,6 +158,52 @@ describe('for(builder)', () => {
 });
 
 describe('has()', () => {
+  it('uses the forced key instead of resolving a belongsTo ancestor', async () => {
+    const graph = await userFactory
+      .has(postFactory, 'authorId')
+      .makeGraph(testContext());
+
+    expect(graph.related['posts']).toEqual([
+      expect.objectContaining({ authorId: graph.entities[0]?.id }),
+    ]);
+    expect(graph.related['users']).toBeUndefined();
+  });
+
+  it.each(['make', 'create'] as const)(
+    'rejects an ancestor reached through a non-forced parent key during %s',
+    async (mode) => {
+      const first = defineFactory<CyclicEntity>({
+        name: 'A',
+        collection: 'first',
+        definition: () => ({ id: 'a', parentId: 'root' }),
+      });
+      const third = defineFactory<CyclicEntity>({
+        name: 'C',
+        collection: 'third',
+        definition: () => ({ id: 'c', parentId: belongsTo(first) }),
+      });
+      const second = defineFactory<ChildWithSecondaryParent>({
+        name: 'B',
+        collection: 'second',
+        definition: () => ({
+          id: 'b',
+          parentId: belongsTo(first),
+          secondaryParentId: belongsTo(third),
+        }),
+      });
+
+      const result = first
+        .has(second, 'parentId')
+        [mode](testContext(new RecordingPersister()));
+
+      await expect(result).rejects.toBeInstanceOf(FactoryCycleError);
+      await expect(result).rejects.toMatchObject({
+        code: 'FACTORY_CYCLE',
+        details: { path: ['A', 'B', 'C', 'A'] },
+      });
+    },
+  );
+
   it('creates the requested number of children per parent', async () => {
     const persister = new RecordingPersister();
 
