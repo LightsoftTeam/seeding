@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { FactoryCycleError } from '../errors.js';
+import { belongsTo } from './belongs-to.js';
+import { defineFactory } from './define-factory.js';
+import type { FactoryBuilder } from './factory-builder.js';
 import {
   commentFactory,
   postFactory,
@@ -7,6 +11,75 @@ import {
   userFactory,
 } from './fixtures.js';
 import type { Post, User } from './fixtures.js';
+
+interface CyclicEntity {
+  id: string;
+  parentId: string;
+}
+
+describe('parent resolution cycles', () => {
+  it.each(['make', 'create'] as const)(
+    'rejects a self-referential belongsTo during %s',
+    async (mode) => {
+      const persister = new RecordingPersister();
+      const factory: FactoryBuilder<CyclicEntity> = defineFactory<CyclicEntity>(
+        {
+          name: 'self',
+          collection: 'self',
+          definition: () => ({ id: 'self', parentId: belongsTo(factory) }),
+        },
+      );
+
+      const result = factory[mode](testContext(persister));
+
+      await expect(result).rejects.toBeInstanceOf(FactoryCycleError);
+      await expect(result).rejects.toMatchObject({
+        code: 'FACTORY_CYCLE',
+        message: 'Factory cycle detected: self -> self',
+        details: { path: ['self', 'self'] },
+      });
+      expect(persister.writes).toEqual([]);
+      expect(persister.collectionNames()).toEqual([]);
+    },
+  );
+
+  it.each(['make', 'create'] as const)(
+    'rejects mutual belongsTo recursion during %s',
+    async (mode) => {
+      const persister = new RecordingPersister();
+      const first: FactoryBuilder<CyclicEntity> = defineFactory<CyclicEntity>({
+        name: 'A',
+        collection: 'first',
+        definition: () => ({ id: 'a', parentId: belongsTo(second) }),
+      });
+      const second: FactoryBuilder<CyclicEntity> = defineFactory<CyclicEntity>({
+        name: 'B',
+        collection: 'second',
+        definition: () => ({ id: 'b', parentId: belongsTo(first) }),
+      });
+
+      await expect(first[mode](testContext(persister))).rejects.toMatchObject({
+        code: 'FACTORY_CYCLE',
+        message: 'Factory cycle detected: A -> B -> A',
+        details: { path: ['A', 'B', 'A'] },
+      });
+      expect(persister.writes).toEqual([]);
+      expect(persister.collectionNames()).toEqual([]);
+    },
+  );
+
+  it('guards for(builder) chains by factory name', async () => {
+    const persister = new RecordingPersister();
+
+    await expect(
+      userFactory.for(userFactory, 'name').create(testContext(persister)),
+    ).rejects.toMatchObject({
+      code: 'FACTORY_CYCLE',
+      details: { path: ['user', 'user'] },
+    });
+    expect(persister.writes).toEqual([]);
+  });
+});
 
 describe('for(entity)', () => {
   it('copies the owner key into the foreign key', async () => {

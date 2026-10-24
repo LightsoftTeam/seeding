@@ -106,27 +106,24 @@ function assertReachableAllowed<TEnvironment extends string>(
   seeder: Seeder<TEnvironment>,
   environment: TEnvironment,
   ancestry: readonly Seeder<TEnvironment>[] = [],
-  verified: Set<Seeder<TEnvironment>> = new Set(),
 ): void {
-  if (verified.has(seeder)) {
-    return;
-  }
-
-  assertAllowed(seeder, environment);
   assertNoCycle(seeder, ancestry);
+  assertAllowed(seeder, environment);
   const branch = [...ancestry, seeder];
 
   for (const callee of seeder.calls ?? []) {
-    assertReachableAllowed(callee, environment, branch, verified);
+    assertReachableAllowed(callee, environment, branch);
   }
-  verified.add(seeder);
 }
 
 function assertNoCycle<TEnvironment extends string>(
   seeder: Seeder<TEnvironment>,
   ancestry: readonly Seeder<TEnvironment>[],
 ): void {
-  if (!ancestry.includes(seeder)) {
+  const repeatsAncestor = ancestry.some(
+    (ancestor) => ancestor === seeder || ancestor.name === seeder.name,
+  );
+  if (!repeatsAncestor) {
     return;
   }
 

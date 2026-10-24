@@ -89,3 +89,21 @@ export class UnknownFactoryStateError extends SeedingError {
     super(message, { code, details });
   }
 }
+
+export class FactoryCycleError extends SeedingError {
+  public constructor(
+    message: string,
+    { code = 'FACTORY_CYCLE', details }: SeedingErrorOptions = {},
+  ) {
+    super(message, { code, details });
+  }
+}
+
+export class InvalidFactoryCountError extends SeedingError {
+  public constructor(
+    message: string,
+    { code = 'INVALID_FACTORY_COUNT', details }: SeedingErrorOptions = {},
+  ) {
+    super(message, { code, details });
+  }
+}

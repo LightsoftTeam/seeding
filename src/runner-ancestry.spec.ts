@@ -62,12 +62,26 @@ describe('per-branch ancestry', () => {
     await expect(run).rejects.toThrowError('Ping -> Pong -> Ping');
   });
 
-  it('detects cycles by identity, not by name', async () => {
+  it('detects same-name cycles with different seeder identities', async () => {
     const twin = seeder('Twin');
     const sameName = seeder('Twin', (context) => context.call(twin));
     const root = seeder('Root', (context) => context.call(sameName));
 
-    await expect(runSeeders(options(root))).resolves.toBeUndefined();
+    await expect(runSeeders(options(root))).rejects.toMatchObject({
+      code: 'SEEDER_CYCLE',
+      details: { path: ['Root', 'Twin', 'Twin'] },
+    });
+  });
+
+  it('detects a cycle when each call creates a fresh seeder', async () => {
+    function freshSeeder(): Seeder<TestEnvironment> {
+      return seeder('Fresh', (context) => context.call(freshSeeder()));
+    }
+
+    await expect(runSeeders(options(freshSeeder()))).rejects.toMatchObject({
+      code: 'SEEDER_CYCLE',
+      details: { path: ['Fresh', 'Fresh'] },
+    });
   });
 });
 
@@ -128,6 +142,37 @@ describe('static preflight of declared calls', () => {
 
     await expect(run).rejects.toMatchObject({ code: 'SEEDER_CYCLE' });
     expect(executed).toBe(false);
+  });
+
+  it('checks same-name ancestry even for previously verified declarations', async () => {
+    let executed = false;
+    const twin = seeder('Twin');
+    const sameName = seeder('Twin', undefined, { calls: [twin] });
+    const root = seeder(
+      'Root',
+      async () => {
+        executed = true;
+      },
+      { calls: [twin, sameName] },
+    );
+
+    await expect(runSeeders(options(root))).rejects.toMatchObject({
+      code: 'SEEDER_CYCLE',
+      details: { path: ['Root', 'Twin', 'Twin'] },
+    });
+    expect(executed).toBe(false);
+  });
+
+  it('checks shared descendants against each declared branch ancestry', async () => {
+    const leaf = seeder('Twin');
+    const shared = seeder('Shared', undefined, { calls: [leaf] });
+    const sameName = seeder('Twin', undefined, { calls: [shared] });
+    const root = seeder('Root', undefined, { calls: [shared, sameName] });
+
+    await expect(runSeeders(options(root))).rejects.toMatchObject({
+      code: 'SEEDER_CYCLE',
+      details: { path: ['Root', 'Twin', 'Shared', 'Twin'] },
+    });
   });
 
   it('still enforces the environment at runtime for undeclared calls', async () => {

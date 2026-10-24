@@ -1,4 +1,7 @@
-import { UnknownFactoryStateError } from '../errors.js';
+import {
+  InvalidFactoryCountError,
+  UnknownFactoryStateError,
+} from '../errors.js';
 import { produceBatch, startRun } from './engine.js';
 import type { ProductionMode, RunState } from './engine.js';
 import type {
@@ -13,6 +16,7 @@ import type {
 
 const DEFAULT_OWNER_KEY = 'id';
 const SINGLE_ENTITY = 1;
+const MINIMUM_COUNT = 0;
 
 /** Immutable: every modifier returns a new builder. */
 export class FactoryBuilder<
@@ -45,6 +49,13 @@ export class FactoryBuilder<
   }
 
   public count(amount: number): FactoryBuilder<T, TStates> {
+    if (!Number.isInteger(amount) || amount < MINIMUM_COUNT) {
+      throw new InvalidFactoryCountError(
+        `Factory count must be a non-negative integer, received ${amount}`,
+        { details: { count: amount } },
+      );
+    }
+
     return this.evolve({ count: amount });
   }
 

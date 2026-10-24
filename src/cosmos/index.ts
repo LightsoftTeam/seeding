@@ -5,6 +5,12 @@ import type { InspectableSeedPersister } from '../persister.js';
 const ALL_DOCUMENTS_QUERY = 'SELECT * FROM c';
 const PARTITION_PATH_SEPARATOR = '/';
 const DOCUMENT_ID_KEY = 'id';
+const MAX_OFFENDING_DOCUMENT_IDS = 5;
+
+interface DocumentPartition {
+  id: string;
+  partitionKey: PartitionKey;
+}
 
 export interface CosmosCollection {
   container: string;
@@ -34,6 +40,8 @@ class CosmosSeedPersister implements InspectableSeedPersister {
 
     for (const document of documents) {
       readPartitionKey(document, partitionKeyPath);
+    }
+    for (const document of documents) {
       await container.items.upsert(document);
     }
   }
@@ -50,9 +58,17 @@ class CosmosSeedPersister implements InspectableSeedPersister {
   public async reset(collections?: string[]): Promise<void> {
     const names = collections ?? Object.keys(this.options.collections);
     const targets = names.map((name) => this.resolveCollection(name));
+    const prepared = [];
 
     for (const { container, partitionKeyPath } of targets) {
-      await clearContainer(container, partitionKeyPath);
+      const documents = await readContainerPartitions(
+        container,
+        partitionKeyPath,
+      );
+      prepared.push({ container, documents });
+    }
+    for (const { container, documents } of prepared) {
+      await clearContainer(container, documents);
     }
   }
 
@@ -77,27 +93,71 @@ class CosmosSeedPersister implements InspectableSeedPersister {
 
 async function clearContainer(
   container: Container,
-  partitionKeyPath: string,
+  documents: readonly DocumentPartition[],
 ): Promise<void> {
+  for (const { id, partitionKey } of documents) {
+    await container.item(id, partitionKey).delete();
+  }
+}
+
+async function readContainerPartitions(
+  container: Container,
+  partitionKeyPath: string,
+): Promise<DocumentPartition[]> {
   const { resources } = await container.items
     .query<{ id: string }>(ALL_DOCUMENTS_QUERY)
     .fetchAll();
 
+  const documents: DocumentPartition[] = [];
+  const missingIds: string[] = [];
+
   for (const document of resources) {
-    const partitionKey = readPartitionKey(document, partitionKeyPath);
-    await container.item(document.id, partitionKey).delete();
+    const partitionKey = findPartitionKey(document, partitionKeyPath);
+    if (partitionKey === undefined) {
+      missingIds.push(document.id);
+      continue;
+    }
+    documents.push({ id: document.id, partitionKey });
   }
+  assertPartitionKeysPresent(missingIds, partitionKeyPath);
+
+  return documents;
 }
 
-function readPartitionKey(document: unknown, path: string): PartitionKey {
+function assertPartitionKeysPresent(documentIds: string[], path: string): void {
+  if (documentIds.length === 0) {
+    return;
+  }
+
+  throw new MissingPartitionKeyError(
+    `Documents are missing partition key at "${path}"`,
+    {
+      details: {
+        path,
+        documentIds: documentIds.slice(0, MAX_OFFENDING_DOCUMENT_IDS),
+      },
+    },
+  );
+}
+
+function findPartitionKey(
+  document: unknown,
+  path: string,
+): PartitionKey | undefined {
   const segments = path.split(PARTITION_PATH_SEPARATOR).slice(1);
   let value: unknown = document;
 
   for (const segment of segments) {
     value = readProperty(value, segment);
   }
-  if (value !== undefined) {
-    return value as PartitionKey;
+
+  return value as PartitionKey | undefined;
+}
+
+function readPartitionKey(document: unknown, path: string): PartitionKey {
+  const partitionKey = findPartitionKey(document, path);
+  if (partitionKey !== undefined) {
+    return partitionKey;
   }
 
   throw new MissingPartitionKeyError(

@@ -138,6 +138,19 @@ describe('createCosmosSeedPersister', () => {
     expect(database.container('people-store').upserts).toEqual([]);
   });
 
+  it('validates the entire batch before upserting any documents', async () => {
+    const { database, persister } = setup();
+
+    await expect(
+      persister.upsert('users', [
+        { id: 'valid', tenant: { key: 'team-a' } },
+        { id: 'missing' },
+      ]),
+    ).rejects.toBeInstanceOf(MissingPartitionKeyError);
+
+    expect(database.container('people-store').upserts).toEqual([]);
+  });
+
   it('reports the configured partition path in a core error', async () => {
     const { persister } = setup();
 
@@ -304,5 +317,62 @@ describe('Cosmos persister reset', () => {
     await expect(persister.reset(['users'])).rejects.toBeInstanceOf(
       MissingPartitionKeyError,
     );
+  });
+
+  it('validates every document before deleting any documents', async () => {
+    const { database, persister } = setup();
+    const container = database.container('people-store');
+    const documents = [
+      { id: 'valid', tenant: { key: 'team-a' } },
+      { id: 'missing' },
+    ];
+    for (const document of documents) {
+      await container.items.upsert(document);
+    }
+
+    await expect(persister.reset(['users'])).rejects.toBeInstanceOf(
+      MissingPartitionKeyError,
+    );
+
+    expect(container.deletions).toEqual([]);
+    expect([...container.documents.values()]).toEqual(documents);
+  });
+
+  it('reports at most five offending ids without exposing document data', async () => {
+    const { database, persister } = setup();
+    const container = database.container('people-store');
+    for (let index = 0; index < 7; index += 1) {
+      await container.items.upsert({ id: `missing-${index}`, name: 'private' });
+    }
+
+    await expect(persister.reset(['users'])).rejects.toMatchObject({
+      code: 'MISSING_PARTITION_KEY',
+      details: {
+        path: '/tenant/key',
+        documentIds: [
+          'missing-0',
+          'missing-1',
+          'missing-2',
+          'missing-3',
+          'missing-4',
+        ],
+      },
+    });
+    expect(container.deletions).toEqual([]);
+  });
+
+  it('validates documents in all selected containers before deleting anything', async () => {
+    const { database, persister } = setup();
+    await persister.upsert('users', [
+      { id: 'valid', tenant: { key: 'team-a' } },
+    ]);
+    await database.container('purchases-store').items.upsert({ id: 'missing' });
+
+    await expect(persister.reset()).rejects.toBeInstanceOf(
+      MissingPartitionKeyError,
+    );
+
+    expect(database.container('people-store').deletions).toEqual([]);
+    expect(database.container('purchases-store').deletions).toEqual([]);
   });
 });

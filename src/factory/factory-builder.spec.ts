@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MissingPersisterError, UnknownFactoryStateError } from '../errors.js';
+import {
+  InvalidFactoryCountError,
+  MissingPersisterError,
+  UnknownFactoryStateError,
+} from '../errors.js';
 import { InMemorySeedPersister } from '../persister.js';
 import { defineFactory } from './define-factory.js';
 import { testContext, userFactory } from './fixtures.js';
@@ -27,6 +31,26 @@ describe('definition and make', () => {
 });
 
 describe('count', () => {
+  it.each([-1, -0.5, 1.5, NaN, Infinity, -Infinity])(
+    'rejects invalid count %s',
+    (amount) => {
+      expect(() => userFactory.count(amount)).toThrowError(
+        InvalidFactoryCountError,
+      );
+      expect(() => userFactory.count(amount)).toThrowError(
+        expect.objectContaining({ code: 'INVALID_FACTORY_COUNT' }),
+      );
+    },
+  );
+
+  it('allows zero without producing parents or persisting an empty batch', async () => {
+    const persister = new InMemorySeedPersister();
+    const builder = userFactory.for(userFactory, 'name').count(0);
+
+    expect(await builder.createMany(testContext(persister))).toEqual([]);
+    expect(persister.collectionNames()).toEqual([]);
+  });
+
   it('defaults to one entity for makeMany', async () => {
     expect(await userFactory.makeMany(testContext())).toHaveLength(1);
   });

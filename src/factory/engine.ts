@@ -1,4 +1,4 @@
-import { MissingPersisterError } from '../errors.js';
+import { FactoryCycleError, MissingPersisterError } from '../errors.js';
 import type {
   Attrs,
   Blueprint,
@@ -14,11 +14,14 @@ import type {
 
 export type ProductionMode = 'make' | 'create';
 
+const CYCLE_PATH_SEPARATOR = ' -> ';
+
 export interface RunState {
   readonly context: FactoryContext;
   readonly mode: ProductionMode;
   readonly recycled: ReadonlyMap<string, readonly Attrs[]>;
   readonly related: Map<string, Attrs[]>;
+  readonly parentChain: readonly string[];
 }
 
 export function startRun(
@@ -31,7 +34,13 @@ export function startRun(
     );
   }
 
-  return { context, mode, recycled: new Map(), related: new Map() };
+  return {
+    context,
+    mode,
+    recycled: new Map(),
+    related: new Map(),
+    parentChain: [],
+  };
 }
 
 export async function produceBatch(
@@ -41,7 +50,14 @@ export async function produceBatch(
   overrides: Attrs = {},
   forced: Attrs = {},
 ): Promise<Attrs[]> {
-  const scoped = scopeRecycling(run, blueprint);
+  if (count === 0) {
+    return [];
+  }
+
+  const scoped = scopeRecycling(
+    { ...run, parentChain: [...run.parentChain, blueprint.name] },
+    blueprint,
+  );
   const pinnedKeys = new Set([
     ...Object.keys(overrides),
     ...Object.keys(forced),
@@ -144,10 +160,24 @@ async function resolveParent(
     return run.context.faker.helpers.arrayElement(recycled);
   }
 
+  assertNoParentCycle(source.blueprint.name, run.parentChain);
+
   const [parent] = await produceBatch(source.blueprint, run, 1);
   recordRelated(run, source.blueprint.collection, parent as Attrs);
 
   return parent as Attrs;
+}
+
+function assertNoParentCycle(name: string, ancestry: readonly string[]): void {
+  if (!ancestry.includes(name)) {
+    return;
+  }
+
+  const path = [...ancestry, name];
+  throw new FactoryCycleError(
+    `Factory cycle detected: ${path.join(CYCLE_PATH_SEPARATOR)}`,
+    { details: { path } },
+  );
 }
 
 async function finalizeEntity(
@@ -230,7 +260,7 @@ async function produceChildBatch(
   const forced = { [link.foreignKey]: parent[link.ownerKey] };
   const children = await produceBatch(
     link.blueprint,
-    run,
+    { ...run, parentChain: [] },
     link.blueprint.count,
     {},
     forced,
