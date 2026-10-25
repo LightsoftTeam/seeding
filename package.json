@@ -1,6 +1,6 @@
 {
   "name": "@lightsoft-pe/seeding",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Database-agnostic, Laravel-inspired seeding library",
   "type": "module",
   "sideEffects": false,
