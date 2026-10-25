@@ -4,13 +4,19 @@ Database-agnostic, Laravel-inspired seeders and factories for TypeScript. Compos
 
 ## Install
 
-Requires Node.js >= 20. The library exports ESM and CommonJS builds, with TypeScript declarations.
+Requires Node.js >= 20. The library exports ESM and CommonJS builds, with TypeScript declarations. The `/cosmos`, `/peru`, and `/testing` subpaths support TypeScript's legacy `moduleResolution: "node"` (`node10`) for CommonJS consumers, as well as `moduleResolution: "nodenext"`. Here, `node10` names TypeScript's resolution mode, not the supported Node.js runtime version.
 
 ```sh
 npm i -D @lightsoft-pe/seeding @faker-js/faker
 ```
 
-Faker is a required peer dependency (`^10.0.0`). For the optional `/cosmos` adapter, also install its peer dependency:
+Faker is a required peer dependency (`^9.0.0 || ^10.0.0`). For CommonJS/Jest consumers that need Faker's CommonJS build, install Faker 9:
+
+```sh
+npm i -D @faker-js/faker@^9
+```
+
+For the optional `/cosmos` adapter, also install its peer dependency:
 
 ```sh
 npm i -D @azure/cosmos@^4.10.1

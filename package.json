@@ -12,6 +12,19 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "cosmos": [
+        "./dist/cosmos/index.d.cts"
+      ],
+      "peru": [
+        "./dist/peru/index.d.cts"
+      ],
+      "testing": [
+        "./dist/testing/index.d.cts"
+      ]
+    }
+  },
   "bin": {
     "seeding": "dist/cli.js"
   },
@@ -69,11 +82,12 @@
     "test": "vitest run",
     "test:cov": "vitest run --coverage",
     "verify:exports": "node scripts/verify-exports.mjs",
-    "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build && npm run verify:exports"
+    "verify:types": "node scripts/verify-types.mjs",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build && npm run verify:exports && npm run verify:types"
   },
   "peerDependencies": {
     "@azure/cosmos": "^4.10.1",
-    "@faker-js/faker": "^10.0.0"
+    "@faker-js/faker": "^9.0.0 || ^10.0.0"
   },
   "peerDependenciesMeta": {
     "@azure/cosmos": {
